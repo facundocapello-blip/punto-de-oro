@@ -39,7 +39,42 @@ var ctx=canvas.getContext("2d");
 var W=320;
 var H=480;
 var started=false;
+var voiceEnabled=false;
 var last=Date.now();
+
+function sayParadigma(){
+  if(!voiceEnabled || !("speechSynthesis" in window)) return;
+  try{
+    window.speechSynthesis.cancel();
+    var u=new SpeechSynthesisUtterance("Paradigma");
+    u.lang="es-AR";
+    u.rate=1.05;
+    u.pitch=1.0;
+    u.volume=1.0;
+
+    var voices=window.speechSynthesis.getVoices();
+    var chosen=null;
+
+    for(var i=0;i<voices.length;i++){
+      if(voices[i].lang && voices[i].lang.toLowerCase().indexOf("es-ar")===0){
+        chosen=voices[i];
+        break;
+      }
+    }
+
+    if(!chosen){
+      for(var j=0;j<voices.length;j++){
+        if(voices[j].lang && voices[j].lang.toLowerCase().indexOf("es")===0){
+          chosen=voices[j];
+          break;
+        }
+      }
+    }
+
+    if(chosen) u.voice=chosen;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
 
 var score1=0;
 var score2=0;
@@ -144,6 +179,7 @@ function getTouchY(e){
 canvas.addEventListener("touchstart",function(e){
   if(e.preventDefault)e.preventDefault();
   started=true;
+  voiceEnabled=true;
 
   var y=getTouchY(e);
   if(y!==null)moveButter(y);
@@ -162,6 +198,7 @@ canvas.addEventListener("touchmove",function(e){
 
 canvas.addEventListener("mousedown",function(e){
   started=true;
+  voiceEnabled=true;
   if(e.clientX<W/2)moveButter(e.clientY);
 },false);
 
@@ -233,10 +270,12 @@ function update(dt){
   }
 
   if(ball.vx<0 && collision(butter)){
+    sayParadigma();
     bounce(butter,1);
   }
 
   if(ball.vx>0 && collision(snake)){
+    sayParadigma();
     bounce(snake,-1);
   }
 
@@ -504,6 +543,14 @@ function drawStart(){
     "Mové el dedo arriba y abajo del lado izquierdo",
     W/2,
     H*0.75
+  );
+
+  ctx.fillStyle="#8CFF9B";
+  ctx.font="bold "+Math.max(13,W*0.015)+"px Arial";
+  ctx.fillText(
+    "Cada golpe dice: PARADIGMA",
+    W/2,
+    H*0.84
   );
 }
 
