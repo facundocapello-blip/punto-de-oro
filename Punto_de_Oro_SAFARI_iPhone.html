@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>Punto de Oro</title>
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  background:#111;
+  font-family:Arial,Helvetica,sans-serif;
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+}
+#game{
+  display:block;
+  width:100%;
+  height:100%;
+  background:#1a1a1a;
+}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<script>
+(function(){
+
+var canvas=document.getElementById("game");
+var ctx=canvas.getContext("2d");
+
+var W=320;
+var H=480;
+var started=false;
+var last=Date.now();
+
+var score1=0;
+var score2=0;
+
+var butter={x:30,y:100,w:70,h:150};
+var snake={x:0,y:100,w:72,h:170};
+var ball={x:0,y:0,w:110,h:34,vx:0,vy:0,speed:0,rot:0};
+
+function clamp(v,min,max){
+  if(v<min)return min;
+  if(v>max)return max;
+  return v;
+}
+
+function rr(x,y,w,h,r,fill,stroke,line){
+  if(r>w/2)r=w/2;
+  if(r>h/2)r=h/2;
+
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+
+  if(fill){
+    ctx.fillStyle=fill;
+    ctx.fill();
+  }
+
+  if(stroke){
+    ctx.lineWidth=line||1;
+    ctx.strokeStyle=stroke;
+    ctx.stroke();
+  }
+}
+
+function resize(){
+  W=window.innerWidth || document.documentElement.clientWidth || 320;
+  H=window.innerHeight || document.documentElement.clientHeight || 480;
+
+  canvas.width=W;
+  canvas.height=H;
+
+  var s=Math.min(W,H);
+
+  butter.w=Math.max(66,s*0.15);
+  butter.h=Math.max(145,H*0.38);
+  butter.x=Math.max(30,W*0.07);
+  butter.y=clamp(butter.y,0,H-butter.h);
+
+  snake.w=Math.max(70,s*0.16);
+  snake.h=Math.max(165,H*0.42);
+  snake.x=W-Math.max(30,W*0.07)-snake.w;
+  snake.y=clamp(snake.y,0,H-snake.h);
+
+  ball.w=Math.max(115,s*0.24);
+  ball.h=Math.max(34,s*0.07);
+
+  if(ball.x===0 && ball.y===0){
+    resetBall();
+  }
+}
+
+function resetBall(dir){
+  ball.x=W/2;
+  ball.y=H/2;
+  ball.rot=0;
+  ball.speed=W*0.72;
+
+  if(!dir){
+    dir=Math.random()>0.5?1:-1;
+  }
+
+  var a=(Math.random()-0.5)*0.5;
+  ball.vx=Math.cos(a)*ball.speed*dir;
+  ball.vy=Math.sin(a)*ball.speed;
+}
+
+function moveButter(y){
+  butter.y=clamp(y-butter.h/2,0,H-butter.h);
+}
+
+function getTouchY(e){
+  var i,t;
+  if(!e.touches)return null;
+
+  for(i=0;i<e.touches.length;i++){
+    t=e.touches[i];
+    if(t.clientX<W/2){
+      return t.clientY;
+    }
+  }
+  return null;
+}
+
+canvas.addEventListener("touchstart",function(e){
+  if(e.preventDefault)e.preventDefault();
+  started=true;
+
+  var y=getTouchY(e);
+  if(y!==null)moveButter(y);
+
+  return false;
+},false);
+
+canvas.addEventListener("touchmove",function(e){
+  if(e.preventDefault)e.preventDefault();
+
+  var y=getTouchY(e);
+  if(y!==null)moveButter(y);
+
+  return false;
+},false);
+
+canvas.addEventListener("mousedown",function(e){
+  started=true;
+  if(e.clientX<W/2)moveButter(e.clientY);
+},false);
+
+canvas.addEventListener("mousemove",function(e){
+  if(e.buttons && e.clientX<W/2){
+    moveButter(e.clientY);
+  }
+},false);
+
+document.addEventListener("touchmove",function(e){
+  if(e.preventDefault)e.preventDefault();
+},{passive:false});
+
+function collision(p){
+  return (
+    ball.x+ball.w/2>p.x &&
+    ball.x-ball.w/2<p.x+p.w &&
+    ball.y+ball.h/2>p.y &&
+    ball.y-ball.h/2<p.y+p.h
+  );
+}
+
+function bounce(p,dir){
+  var c=p.y+p.h/2;
+  var impact=(ball.y-c)/(p.h/2);
+
+  impact=clamp(impact,-1,1);
+
+  ball.speed=ball.speed*1.10;
+  if(ball.speed>W*2.0)ball.speed=W*2.0;
+
+  var ang=impact*0.9;
+
+  ball.vx=Math.cos(ang)*ball.speed*dir;
+  ball.vy=Math.sin(ang)*ball.speed;
+
+  if(dir>0){
+    ball.x=p.x+p.w+ball.w/2+4;
+  }else{
+    ball.x=p.x-ball.w/2-4;
+  }
+}
+
+function update(dt){
+  if(!started)return;
+
+  var center=snake.y+snake.h/2;
+  var diff=ball.y-center;
+  var aiSpeed=H*0.92;
+
+  if(Math.abs(diff)>12){
+    snake.y+=((diff>0)?1:-1)*aiSpeed*dt;
+  }
+
+  snake.y=clamp(snake.y,0,H-snake.h);
+
+  ball.x+=ball.vx*dt;
+  ball.y+=ball.vy*dt;
+  ball.rot+=ball.vx*dt*0.0016;
+
+  if(ball.y-ball.h/2<=0 && ball.vy<0){
+    ball.y=ball.h/2;
+    ball.vy=-ball.vy;
+  }
+
+  if(ball.y+ball.h/2>=H && ball.vy>0){
+    ball.y=H-ball.h/2;
+    ball.vy=-ball.vy;
+  }
+
+  if(ball.vx<0 && collision(butter)){
+    bounce(butter,1);
+  }
+
+  if(ball.vx>0 && collision(snake)){
+    bounce(snake,-1);
+  }
+
+  if(ball.x+ball.w/2<0){
+    score2++;
+    resetBall(-1);
+  }
+
+  if(ball.x-ball.w/2>W){
+    score1++;
+    resetBall(1);
+  }
+}
+
+function drawBG(){
+  var g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#402d22");
+  g.addColorStop(1,"#121212");
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,W,H);
+
+  ctx.strokeStyle="rgba(255,255,255,0.16)";
+  ctx.lineWidth=3;
+
+  var y=H*0.18;
+  var dash=18;
+
+  while(y<H){
+    ctx.beginPath();
+    ctx.moveTo(W/2,y);
+    ctx.lineTo(W/2,Math.min(H,y+dash));
+    ctx.stroke();
+    y+=dash*2;
+  }
+}
+
+function drawScore(){
+  var label=Math.max(16,W*0.02);
+  var num=Math.max(46,W*0.062);
+
+  ctx.textAlign="center";
+  ctx.textBaseline="top";
+
+  ctx.font="bold "+label+"px Arial";
+
+  ctx.fillStyle="#FFE082";
+  ctx.fillText("MANTECA",W/2-W*0.12,12);
+
+  ctx.fillStyle="#F0FFF2";
+  ctx.fillText("WHITE MAMBA",W/2+W*0.12,12);
+
+  ctx.font="bold "+num+"px Arial";
+  ctx.fillStyle="#FFF";
+
+  ctx.fillText(String(score1),W/2-W*0.12,38);
+  ctx.fillText(String(score2),W/2+W*0.12,38);
+}
+
+function drawGolden(){
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+
+  var size=Math.max(30,W*0.048);
+
+  ctx.font="bold "+size+"px Arial";
+  ctx.lineWidth=8;
+  ctx.strokeStyle="#5c3a00";
+  ctx.strokeText("PUNTO DE ORO",W/2,H/2);
+
+  ctx.fillStyle="#FFD633";
+  ctx.fillText("PUNTO DE ORO",W/2,H/2);
+}
+
+function drawButter(){
+  var p=butter;
+
+  ctx.lineWidth=Math.max(5,p.w*0.07);
+  ctx.strokeStyle="#5c4027";
+  ctx.lineCap="round";
+
+  ctx.beginPath();
+  ctx.moveTo(p.x,p.y+p.h*0.35);
+  ctx.lineTo(p.x-p.w*0.48,p.y+p.h*0.18);
+
+  ctx.moveTo(p.x+p.w,p.y+p.h*0.35);
+  ctx.lineTo(p.x+p.w*1.48,p.y+p.h*0.18);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(p.x+p.w*0.30,p.y+p.h);
+  ctx.lineTo(p.x+p.w*0.16,p.y+p.h+p.h*0.12);
+
+  ctx.moveTo(p.x+p.w*0.70,p.y+p.h);
+  ctx.lineTo(p.x+p.w*0.84,p.y+p.h+p.h*0.12);
+  ctx.stroke();
+
+  rr(p.x,p.y,p.w,p.h,p.w*0.16,"#F6D968","#C8AA43",4);
+
+  rr(
+    p.x+p.w*0.10,
+    p.y+p.h*0.06,
+    p.w*0.16,
+    p.h*0.75,
+    5,
+    "rgba(255,255,255,0.25)"
+  );
+
+  var er=p.w*0.13;
+  var ey=p.y+p.h*0.24;
+
+  ctx.fillStyle="#FFF";
+  ctx.beginPath();
+  ctx.arc(p.x+p.w*0.35,ey,er,0,Math.PI*2);
+  ctx.arc(p.x+p.w*0.67,ey,er,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle="#111";
+  ctx.beginPath();
+  ctx.arc(p.x+p.w*0.38,ey,er*0.42,0,Math.PI*2);
+  ctx.arc(p.x+p.w*0.70,ey,er*0.42,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle="#6a471f";
+  ctx.lineWidth=3;
+
+  ctx.beginPath();
+  ctx.arc(
+    p.x+p.w*0.52,
+    p.y+p.h*0.45,
+    p.w*0.18,
+    0.2,
+    Math.PI-0.2
+  );
+  ctx.stroke();
+}
+
+function drawSnake(){
+  var p=snake;
+
+  rr(p.x,p.y,p.w,p.h,p.w*0.48,"#F6FFF7","#48D463",5);
+
+  ctx.fillStyle="#53D96C";
+
+  var i;
+  for(i=1;i<=5;i++){
+    ctx.beginPath();
+    ctx.arc(
+      p.x+p.w*0.60,
+      p.y+p.h*(i/6),
+      p.w*0.14,
+      0,
+      Math.PI*2
+    );
+    ctx.fill();
+  }
+
+  var er=p.w*0.15;
+
+  ctx.fillStyle="#FFF";
+  ctx.beginPath();
+  ctx.arc(p.x,p.y+p.h*0.27,er,0,Math.PI*2);
+  ctx.arc(p.x,p.y+p.h*0.43,er,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle="#111";
+  ctx.beginPath();
+  ctx.arc(p.x-er*0.20,p.y+p.h*0.27,er*0.42,0,Math.PI*2);
+  ctx.arc(p.x-er*0.20,p.y+p.h*0.43,er*0.42,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle="#FF416C";
+  ctx.lineWidth=4;
+  ctx.lineCap="round";
+
+  ctx.beginPath();
+  ctx.moveTo(p.x,p.y+p.h*0.35);
+  ctx.lineTo(p.x-p.w*0.40,p.y+p.h*0.35);
+
+  ctx.moveTo(p.x-p.w*0.40,p.y+p.h*0.35);
+  ctx.lineTo(p.x-p.w*0.54,p.y+p.h*0.29);
+
+  ctx.moveTo(p.x-p.w*0.40,p.y+p.h*0.35);
+  ctx.lineTo(p.x-p.w*0.54,p.y+p.h*0.41);
+  ctx.stroke();
+}
+
+function drawBrush(){
+  ctx.save();
+
+  ctx.translate(ball.x,ball.y);
+  ctx.rotate(ball.rot);
+
+  var w=ball.w;
+  var h=ball.h;
+
+  rr(
+    -w*0.52,
+    -h*0.25,
+    w*0.72,
+    h*0.50,
+    h*0.23,
+    "#159FE3",
+    "#EAFBFF",
+    3
+  );
+
+  rr(
+    -w*0.31,
+    -h*0.10,
+    w*0.29,
+    h*0.20,
+    h*0.10,
+    "#FFF"
+  );
+
+  rr(
+    w*0.14,
+    -h*0.40,
+    w*0.31,
+    h*0.80,
+    h*0.17,
+    "#FFF",
+    "#B9DDE8",
+    2
+  );
+
+  var i;
+  for(i=0;i<6;i++){
+    ctx.fillStyle=(i%2===0)?"#59DFFF":"#FFF";
+    ctx.fillRect(
+      w*0.20+i*w*0.039,
+      -h*0.70,
+      Math.max(4,w*0.019),
+      h*0.32
+    );
+  }
+
+  ctx.restore();
+}
+
+function drawStart(){
+  if(started)return;
+
+  ctx.fillStyle="rgba(0,0,0,0.68)";
+  ctx.fillRect(0,0,W,H);
+
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+
+  ctx.fillStyle="#FFD633";
+  ctx.font="bold "+Math.max(48,W*0.075)+"px Arial";
+  ctx.fillText("PUNTO DE ORO",W/2,H*0.32);
+
+  ctx.fillStyle="#FFF";
+  ctx.font="bold "+Math.max(22,W*0.030)+"px Arial";
+  ctx.fillText("MANTECA  VS  WHITE MAMBA",W/2,H*0.49);
+
+  ctx.fillStyle="#FFD633";
+  ctx.font="bold "+Math.max(20,W*0.026)+"px Arial";
+  ctx.fillText("TOCÁ LA PANTALLA",W/2,H*0.65);
+
+  ctx.fillStyle="#FFF";
+  ctx.font=Math.max(15,W*0.017)+"px Arial";
+  ctx.fillText(
+    "Mové el dedo arriba y abajo del lado izquierdo",
+    W/2,
+    H*0.75
+  );
+}
+
+function loop(){
+  var now=Date.now();
+  var dt=(now-last)/1000;
+
+  if(dt>0.03)dt=0.03;
+  last=now;
+
+  update(dt);
+
+  drawBG();
+  drawScore();
+  drawGolden();
+  drawButter();
+  drawSnake();
+  drawBrush();
+  drawStart();
+
+  window.requestAnimationFrame(loop);
+}
+
+window.addEventListener("resize",function(){
+  resize();
+},false);
+
+window.addEventListener("orientationchange",function(){
+  setTimeout(resize,300);
+},false);
+
+resize();
+loop();
+
+})();
+</script>
+</body>
+</html>
